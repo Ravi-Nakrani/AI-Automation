@@ -1,6 +1,6 @@
 import Agent from "../models/agent.model.js";
 
-export const createAgent = (req, res) => {
+export const createAgent = async (req, res) => {
   try {
     const { name, knowledgeBase, instructions, tools } = req.body;
     if (!name || !knowledgeBase || !instructions) {
@@ -9,7 +9,7 @@ export const createAgent = (req, res) => {
       });
     }
 
-    const newAgent = Agent.create({
+    const newAgent = await Agent.create({
       userId: req.user.id,
       name,
       knowledgeBase,

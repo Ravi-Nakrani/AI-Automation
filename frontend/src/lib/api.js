@@ -1,8 +1,19 @@
 import axios from "axios";
 
 const rawBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
-const baseURL =
-  rawBaseUrl.replace(/\/+$/, "") + (rawBaseUrl.endsWith("/api") ? "" : "/api");
+const normalizedBaseUrl = rawBaseUrl.replace(/\/+$/, "");
+const baseURL = normalizedBaseUrl.endsWith("/api")
+  ? normalizedBaseUrl
+  : `${normalizedBaseUrl}/api`;
+
+let unauthorizedHandler = null;
+
+/**
+ * Registers a callback invoked when an authenticated API request receives 401.
+ */
+export const setUnauthorizedHandler = (handler) => {
+  unauthorizedHandler = handler;
+};
 
 export const api = axios.create({
   baseURL,
@@ -24,12 +35,27 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (axios.isCancel(error)) {
+      return Promise.reject(error);
+    }
+
+    const requestUrl = error.config?.url || "";
+    if (
+      error.response?.status === 401 &&
+      typeof unauthorizedHandler === "function" &&
+      !requestUrl.includes("/auth/profile") &&
+      !requestUrl.includes("/auth/login")
+    ) {
+      unauthorizedHandler();
+    }
+
     const customMessage =
       error.response?.data?.message ||
       error.message ||
       "An unexpected server error occurred";
     const customError = new Error(customMessage);
     customError.status = error.response?.status;
+    customError.code = error.code;
     customError.data = error.response?.data;
     customError.originalError = error;
     return Promise.reject(customError);
