@@ -20,6 +20,8 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { deleteAgent, getAllAgents } from "@/features/agent";
 import { getAgentToolLabel } from "@/lib/agentTools";
+import { useDispatch, useSelector } from "react-redux";
+import { setAgents } from "@/store/agentSlice";
 
 function AgentCardSkeleton() {
   return (
@@ -181,8 +183,9 @@ function AgentDetailsModal({ agent, onClose, onUseAgent }) {
 
 export default function Agents() {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
 
-  const [agents, setAgents] = useState([]);
+  const agents = useSelector((state) => state.agent.agents);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -195,7 +198,7 @@ export default function Agents() {
     try {
       const data = await getAllAgents(signal);
       if (signal?.aborted) return;
-      setAgents(data);
+      dispatch(setAgents(data));
       setErrorMessage("");
     } catch (err) {
       if (signal?.aborted) return;
@@ -248,7 +251,9 @@ export default function Agents() {
 
     return agents.filter((agent) => {
       const nameMatch = agent.name?.toLowerCase().includes(query);
-      const instructionsMatch = agent.instructions?.toLowerCase().includes(query);
+      const instructionsMatch = agent.instructions
+        ?.toLowerCase()
+        .includes(query);
       const toolMatch = Array.isArray(agent.tools)
         ? agent.tools.some((toolId) =>
             getAgentToolLabel(toolId).toLowerCase().includes(query),
@@ -273,7 +278,7 @@ export default function Agents() {
 
     try {
       await deleteAgent(agentId);
-      setAgents((prev) => prev.filter((a) => a._id !== agentId));
+      dispatch(setAgents(agents.filter((a) => a._id !== agentId)));
       if (inspectedAgent?._id === agentId) {
         setInspectedAgent(null);
       }

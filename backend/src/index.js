@@ -1,12 +1,11 @@
+import "dotenv/config.js";
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import connectDB from "./config/db.js";
 import authRouter from "./routes/auth.route.js";
 import agentRouter from "./routes/agent.route.js";
-
-dotenv.config();
+import chatRouter from "./routes/chat.route.js";
 
 const app = express();
 
@@ -18,6 +17,7 @@ app.use(cookieParser());
 // Routes
 app.use("/api/auth", authRouter);
 app.use("/api/agents", agentRouter);
+app.use("/api/chat", chatRouter);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

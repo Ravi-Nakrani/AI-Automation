@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Bot, Loader2, Square } from "lucide-react";
+import { ArrowUp, Bot, Clock, Loader2, Square } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import BrandMark from "@/components/BrandMark";
 import ErrorAlert from "@/components/ErrorAlert";
@@ -8,20 +8,14 @@ import ChatMessage from "@/components/chat/ChatMessage";
 import Header from "@/components/layout/Header";
 import { Badge } from "@/components/ui/badge";
 import { getAllAgents } from "@/features/agent";
-import { sendChatMessage } from "@/features/chat";
+import { sendAgentMessage, sendChatMessage } from "@/features/chat";
 import { getAgentToolLabel } from "@/lib/agentTools";
-
-const STARTER_PROMPTS = [
-  "Summarize my workflow goals into actionable steps",
-  "Draft a structured checklist for an API integration",
-  "Help me write clear agent instructions for customer support",
-];
+import { useDispatch, useSelector } from "react-redux";
+import { setAgents } from "@/store/agentSlice";
 
 function extractReplyContent(data) {
   if (typeof data === "string") return data;
-  return (
-    data?.reply || data?.message || data?.content || data?.response || ""
-  );
+  return data?.reply || data?.message || data?.content || data?.response || "";
 }
 
 function ChatSession({
@@ -34,13 +28,18 @@ function ChatSession({
   input,
   setInput,
   autoFocusComposer,
+  cooldownSeconds,
+  onStartCooldown,
 }) {
   const navigate = useNavigate();
 
   const [messages, setMessages] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [isRateLimitError, setIsRateLimitError] = useState(false);
   const [failedMessageId, setFailedMessageId] = useState(null);
+
+  const isCoolingDown = cooldownSeconds > 0;
 
   const textareaRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -101,23 +100,25 @@ function ChatSession({
     setMessages([]);
     setInput("");
     setErrorMessage("");
+    setIsRateLimitError(false);
     setFailedMessageId(null);
     resetTextareaHeight();
     textareaRef.current?.focus();
   };
 
-  const executeChatRequest = async (promptText, userMsgId, history) => {
+  const executeChatRequest = async (promptText, userMsgId) => {
     setIsGenerating(true);
     const controller = new AbortController();
     abortControllerRef.current = controller;
     pendingUserIdRef.current = userMsgId;
 
     try {
-      const data = await sendChatMessage(
+      const data = await (
+        selectedAgent?._id ? sendAgentMessage : sendChatMessage
+      )(
         {
           message: promptText,
           agentId: selectedAgent?._id || null,
-          messages: [...history, { role: "user", content: promptText }],
         },
         controller.signal,
       );
@@ -130,6 +131,7 @@ function ChatSession({
           prev.map((m) => (m.id === userMsgId ? { ...m, failed: true } : m)),
         );
         setFailedMessageId(userMsgId);
+        setIsRateLimitError(false);
         setErrorMessage("Received an empty response from the server.");
         return;
       }
@@ -141,15 +143,31 @@ function ChatSession({
       };
       setMessages((prev) => [...prev, replyMessage]);
       setFailedMessageId(null);
+      setIsRateLimitError(false);
     } catch (err) {
       if (controller.signal.aborted) return;
       setMessages((prev) =>
         prev.map((m) => (m.id === userMsgId ? { ...m, failed: true } : m)),
       );
       setFailedMessageId(userMsgId);
-      setErrorMessage(
-        err?.message || "Failed to get a response from the server.",
-      );
+
+      const hitRateLimit =
+        err?.status === 429 ||
+        err?.serverCode === "RATE_LIMIT_EXCEEDED" ||
+        Number(err?.retryAfter) > 0;
+
+      if (hitRateLimit) {
+        onStartCooldown(err?.retryAfter || 15);
+        setIsRateLimitError(true);
+        setErrorMessage(
+          err?.message || "Rate limit reached. Please wait before retrying.",
+        );
+      } else {
+        setIsRateLimitError(false);
+        setErrorMessage(
+          err?.message || "Failed to get a response from the server.",
+        );
+      }
     } finally {
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null;
@@ -163,9 +181,10 @@ function ChatSession({
     if (e) e.preventDefault();
     const rawText = typeof overrideText === "string" ? overrideText : input;
     const trimmed = rawText.trim();
-    if (!trimmed || isGenerating) return;
+    if (!trimmed || isGenerating || isCoolingDown) return;
 
     setErrorMessage("");
+    setIsRateLimitError(false);
     setFailedMessageId(null);
 
     const userMsgId = `user-${nextMessageIdRef.current++}`;
@@ -175,38 +194,29 @@ function ChatSession({
       content: trimmed,
     };
 
-    const cleanHistory = messages
-      .filter((m) => !m.failed)
-      .map(({ role, content }) => ({ role, content }));
-
     setMessages((prev) => [...prev, userMessage]);
     if (typeof overrideText !== "string") {
       setInput("");
       resetTextareaHeight();
     }
 
-    await executeChatRequest(trimmed, userMsgId, cleanHistory);
+    await executeChatRequest(trimmed, userMsgId);
   };
 
   const handleRetryFailed = async () => {
-    if (!failedMessageId || isGenerating) return;
+    if (!failedMessageId || isGenerating || isCoolingDown) return;
 
-    const targetIndex = messages.findIndex((m) => m.id === failedMessageId);
-    if (targetIndex === -1) return;
-
-    const targetMessage = messages[targetIndex];
-    const cleanHistory = messages
-      .slice(0, targetIndex)
-      .filter((m) => !m.failed)
-      .map(({ role, content }) => ({ role, content }));
+    const targetMessage = messages.find((m) => m.id === failedMessageId);
+    if (!targetMessage) return;
 
     setErrorMessage("");
+    setIsRateLimitError(false);
     setFailedMessageId(null);
     setMessages((prev) =>
       prev.map((m) => (m.id === failedMessageId ? { ...m, failed: false } : m)),
     );
 
-    await executeChatRequest(targetMessage.content, targetMessage.id, cleanHistory);
+    await executeChatRequest(targetMessage.content, targetMessage.id);
   };
 
   const handleKeyDown = (e) => {
@@ -219,6 +229,14 @@ function ChatSession({
   const selectedTools = Array.isArray(selectedAgent?.tools)
     ? selectedAgent.tools
     : [];
+
+  const displayedError = isRateLimitError
+    ? isCoolingDown
+      ? `Rate limit reached. Please wait ${cooldownSeconds}s before sending or retrying.`
+      : errorMessage
+        ? "Cooldown complete. You can retry your message or send a new one."
+        : ""
+    : errorMessage;
 
   return (
     <main className="flex-1 min-h-0 flex flex-col max-w-3xl w-full mx-auto px-4 sm:px-6">
@@ -236,9 +254,7 @@ function ChatSession({
 
               <div className="space-y-1.5">
                 <h1 className="text-lg font-medium tracking-tight text-foreground">
-                  {selectedAgent
-                    ? selectedAgent.name
-                    : "How can I assist you?"}
+                  {selectedAgent ? selectedAgent.name : "How can I assist you?"}
                 </h1>
                 <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2 max-w-md mx-auto">
                   {selectedAgent
@@ -258,21 +274,6 @@ function ChatSession({
                     >
                       {getAgentToolLabel(toolId)}
                     </Badge>
-                  ))}
-                </div>
-              ) : null}
-
-              {!selectedAgent ? (
-                <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
-                  {STARTER_PROMPTS.map((prompt) => (
-                    <button
-                      key={prompt}
-                      type="button"
-                      onClick={() => handleSend(null, prompt)}
-                      className="text-left text-xs px-3 py-1.5 rounded-full border border-border/70 bg-card/50 hover:bg-card hover:border-border text-muted-foreground hover:text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      {prompt}
-                    </button>
                   ))}
                 </div>
               ) : null}
@@ -311,9 +312,18 @@ function ChatSession({
 
       <div className="shrink-0 pb-4 pt-2">
         <ErrorAlert
-          message={errorMessage}
+          message={displayedError}
           onRetry={failedMessageId ? handleRetryFailed : undefined}
-          onDismiss={() => setErrorMessage("")}
+          retryLabel={
+            isRateLimitError && isCoolingDown
+              ? `Retry in ${cooldownSeconds}s`
+              : "Retry"
+          }
+          retryDisabled={isCoolingDown}
+          onDismiss={() => {
+            setErrorMessage("");
+            setIsRateLimitError(false);
+          }}
           className="mb-2.5"
         />
 
@@ -331,9 +341,11 @@ function ChatSession({
             }}
             onKeyDown={handleKeyDown}
             placeholder={
-              selectedAgent
-                ? `Message ${selectedAgent.name}...`
-                : "Ask anything..."
+              isCoolingDown
+                ? `Rate limit cooldown (${cooldownSeconds}s)...`
+                : selectedAgent
+                  ? `Message ${selectedAgent.name}...`
+                  : "Ask anything..."
             }
             aria-label="Chat message"
             className="w-full bg-transparent resize-none outline-none text-sm text-foreground placeholder:text-muted-foreground/70 min-h-[38px] max-h-40 px-1 leading-relaxed"
@@ -352,10 +364,19 @@ function ChatSession({
             />
 
             <div className="flex items-center gap-2">
+              {isCoolingDown ? (
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-md tabular-nums">
+                  <Clock className="size-3" />
+                  <span>Wait {cooldownSeconds}s</span>
+                </span>
+              ) : null}
+
               <button
                 type="button"
                 onClick={handleNewChat}
-                disabled={messages.length === 0 && !input.trim() && !isGenerating}
+                disabled={
+                  messages.length === 0 && !input.trim() && !isGenerating
+                }
                 className="text-xs text-muted-foreground hover:text-foreground px-2.5 py-1.5 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer disabled:opacity-40 disabled:pointer-events-none outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 New chat
@@ -374,10 +395,19 @@ function ChatSession({
               ) : (
                 <button
                   type="submit"
-                  disabled={!input.trim()}
-                  aria-label="Send message"
+                  disabled={!input.trim() || isCoolingDown}
+                  aria-label={
+                    isCoolingDown
+                      ? `Wait ${cooldownSeconds} seconds before sending`
+                      : "Send message"
+                  }
+                  title={
+                    isCoolingDown
+                      ? `Wait ${cooldownSeconds}s before sending`
+                      : "Send message"
+                  }
                   className={`size-8 rounded-full flex items-center justify-center transition-all shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                    input.trim()
+                    input.trim() && !isCoolingDown
                       ? "bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
                       : "bg-muted text-muted-foreground/60 cursor-not-allowed"
                   }`}
@@ -401,12 +431,30 @@ export default function Home() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const selectedAgentId = searchParams.get("agent") || null;
+  const dispatch = useDispatch();
 
-  const [agents, setAgents] = useState([]);
+  const agents = useSelector((state) => state.agent.agents);
+
   const [isLoadingAgents, setIsLoadingAgents] = useState(true);
   const [agentsError, setAgentsError] = useState("");
   const [input, setInput] = useState("");
   const [agentSwitchCount, setAgentSwitchCount] = useState(0);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+
+  const isCoolingDown = cooldownSeconds > 0;
+
+  useEffect(() => {
+    if (!isCoolingDown) return;
+    const timer = setInterval(() => {
+      setCooldownSeconds((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isCoolingDown]);
+
+  const handleStartCooldown = useCallback((seconds) => {
+    const duration = Math.max(1, Math.ceil(Number(seconds) || 15));
+    setCooldownSeconds((prev) => Math.max(prev, duration));
+  }, []);
 
   const selectedAgentIdRef = useRef(selectedAgentId);
 
@@ -424,7 +472,7 @@ export default function Home() {
       try {
         const list = await getAllAgents(signal);
         if (signal?.aborted) return;
-        setAgents(list);
+        dispatch(setAgents(list));
         setAgentsError("");
 
         const activeId = selectedAgentIdRef.current;
@@ -440,7 +488,7 @@ export default function Home() {
         }
       }
     },
-    [setSearchParams],
+    [setSearchParams, dispatch],
   );
 
   useEffect(() => {
@@ -482,6 +530,8 @@ export default function Home() {
         input={input}
         setInput={setInput}
         autoFocusComposer={agentSwitchCount > 0}
+        cooldownSeconds={cooldownSeconds}
+        onStartCooldown={handleStartCooldown}
       />
     </div>
   );

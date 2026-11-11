@@ -53,9 +53,19 @@ api.interceptors.response.use(
       error.response?.data?.message ||
       error.message ||
       "An unexpected server error occurred";
+    const rawRetryAfter =
+      error.response?.data?.retryAfter ??
+      error.response?.headers?.["retry-after"];
+    const parsedRetryAfter = Number(rawRetryAfter);
+
     const customError = new Error(customMessage);
     customError.status = error.response?.status;
     customError.code = error.code;
+    customError.serverCode = error.response?.data?.code || null;
+    customError.retryAfter =
+      Number.isFinite(parsedRetryAfter) && parsedRetryAfter > 0
+        ? Math.ceil(parsedRetryAfter)
+        : null;
     customError.data = error.response?.data;
     customError.originalError = error;
     return Promise.reject(customError);

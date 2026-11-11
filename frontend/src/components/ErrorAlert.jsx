@@ -9,6 +9,7 @@ export default function ErrorAlert({
   onDismiss,
   onRetry,
   retryLabel = "Retry",
+  retryDisabled = false,
   className,
 }) {
   if (!message) return null;
@@ -31,7 +32,8 @@ export default function ErrorAlert({
           <button
             type="button"
             onClick={onRetry}
-            className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-destructive/15 hover:bg-destructive/25 text-red-700 dark:text-red-200 font-medium transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            disabled={retryDisabled}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-destructive/15 hover:bg-destructive/25 text-red-700 dark:text-red-200 font-medium transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <RotateCcw className="size-3" />
             <span>{retryLabel}</span>
