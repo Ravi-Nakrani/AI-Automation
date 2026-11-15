@@ -18,10 +18,25 @@ const server = new McpServer({
   version: "1.0.0",
 });
 
-const tavilySearchTool = new TavilySearch({
-  maxResults: 3,
-  topic: "general",
-});
+let tavilySearchTool = null;
+
+const getTavilySearchTool = () => {
+  if (!tavilySearchTool) {
+    const apiKey = process.env.TAVILY_API_KEY?.trim()?.replace(
+      /^["']|["']$/g,
+      "",
+    );
+    if (!apiKey) {
+      throw new Error("TAVILY_API_KEY environment variable is missing.");
+    }
+    tavilySearchTool = new TavilySearch({
+      apiKey,
+      maxResults: 3,
+      topic: "general",
+    });
+  }
+  return tavilySearchTool;
+};
 
 const compactSearchResult = (result) => {
   if (typeof result === "string") return result;
@@ -53,7 +68,8 @@ server.registerTool(
   },
   async ({ query }) => {
     try {
-      const result = await tavilySearchTool.invoke({ query });
+      const tool = getTavilySearchTool();
+      const result = await tool.invoke({ query });
       if (result && typeof result === "object" && result.error) {
         return {
           isError: true,
@@ -68,7 +84,12 @@ server.registerTool(
       console.error("web_search tool error:", error);
       return {
         isError: true,
-        content: [{ type: "text", text: "Web search failed." }],
+        content: [
+          {
+            type: "text",
+            text: `Web search error: ${error.message || "Search failed."}`,
+          },
+        ],
       };
     }
   },

@@ -6,6 +6,11 @@ const _fileName = fileURLToPath(import.meta.url);
 const direName = path.dirname(_fileName);
 const serverPath = path.join(direName, "server.js");
 
+
+const childEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([_, v]) => typeof v === "string"),
+);
+
 const adapter = new MCPAdapter({
   prefixToolNameWithServerName: false,
   servers: {
@@ -13,6 +18,7 @@ const adapter = new MCPAdapter({
       transport: "stdio",
       command: process.execPath,
       args: [serverPath],
+      env: childEnv,
     },
   },
 });
