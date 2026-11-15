@@ -8,11 +8,14 @@ export const authCheck = (req, res, next) => {
       .json({ message: "Access denied. No token provided." });
   }
 
-  const decoded = verifyToken(token);
-  if (!decoded) {
+  try {
+    const decoded = verifyToken(token);
+    if (!decoded) {
+      return res.status(401).json({ message: "Invalid token." });
+    }
+    req.user = decoded;
+    next();
+  } catch {
     return res.status(401).json({ message: "Invalid token." });
   }
-
-  req.user = decoded;
-  next();
 };

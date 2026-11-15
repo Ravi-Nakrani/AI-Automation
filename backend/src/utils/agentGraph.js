@@ -50,6 +50,7 @@ const client = new MongoClient(process.env.MONGODB_URI);
 const checkpointer = new MongoDBSaver({ client, dbName: "langgraph" });
 
 export const createAgentGraph = async (agent, userId) => {
+  if (!agent?._id) throw new Error("agent._id is required");
   const mcpTools = await getMcpTools();
 
   const llmWithTools = llm.bindTools(mcpTools);
@@ -144,7 +145,7 @@ ${agent?.knowledgeBase || "No custom knowledge base provided for this session."}
     return requiresApproval ? "actionApprovalNode" : "tools";
   };
 
-  const routeAfterApproval = () => "chatNode";
+  const routeAfterApproval = () => END;
 
   const workflow = new StateGraph(MessagesAnnotation)
     .addNode("chatNode", chatNode)

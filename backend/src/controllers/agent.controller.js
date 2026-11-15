@@ -36,7 +36,10 @@ export const getAllAgents = async (req, res) => {
 
 export const getAgentById = async (req, res) => {
   try {
-    const agent = await Agent.findById(req.params.id);
+    const agent = await Agent.findOne({
+      _id: req.params.id,
+      userId: req.user.id,
+    });
 
     if (!agent) {
       return res.status(404).json({ message: "Agent not found" });
@@ -51,7 +54,14 @@ export const getAgentById = async (req, res) => {
 
 export const deleteAgent = async (req, res) => {
   try {
-    await Agent.findByIdAndDelete(req.params.id);
+    const agent = await Agent.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.user.id,
+    });
+
+    if (!agent) {
+      return res.status(404).json({ message: "Agent not found" });
+    }
 
     return res.status(200).json({ message: "Agent deleted successfully" });
   } catch (error) {

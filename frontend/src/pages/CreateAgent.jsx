@@ -224,19 +224,26 @@ export default function CreateAgent() {
                   <label
                     key={tool.id}
                     htmlFor={checkboxId}
-                    className={`flex items-center gap-2.5 p-2.5 rounded-lg border text-xs cursor-pointer select-none transition-colors ${
-                      checked
-                        ? "border-primary/50 bg-primary/5 text-foreground"
-                        : "border-border/70 hover:bg-muted/40 text-muted-foreground hover:text-foreground"
+                    className={`flex items-center gap-2.5 p-2.5 rounded-lg border text-xs select-none transition-colors ${
+                      !tool.available
+                        ? "border-border/40 bg-muted/10 text-muted-foreground/50 cursor-not-allowed opacity-60"
+                        : checked
+                          ? "border-primary/50 bg-primary/5 text-foreground cursor-pointer"
+                          : "border-border/70 hover:bg-muted/40 text-muted-foreground hover:text-foreground cursor-pointer"
                     }`}
                   >
                     <Checkbox
                       id={checkboxId}
                       checked={checked}
                       onCheckedChange={() => handleToggleTool(tool.id)}
-                      disabled={isLoading}
+                      disabled={isLoading || !tool.available}
                     />
-                    <span className="font-medium">{tool.label}</span>
+                    <span className="font-medium flex-1">{tool.label}</span>
+                    {!tool.available && (
+                      <span className="text-[10px] font-normal text-muted-foreground/60 ml-auto">
+                        Coming soon
+                      </span>
+                    )}
                   </label>
                 );
               })}
