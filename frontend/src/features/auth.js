@@ -23,3 +23,12 @@ export const login = async (firebaseToken) => {
   const response = await api.post("/auth/login", { firebaseToken });
   return response.data;
 };
+
+/**
+ * Logs out the current user by clearing the backend session cookie.
+ */
+export const logout = async () => {
+  const response = await api.post("/auth/logout");
+  return response.data;
+};
+

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Bot, Clock, Loader2, Square } from "lucide-react";
+import { ArrowUp, Bot, Loader2, Square } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import BrandMark from "@/components/BrandMark";
 import ErrorAlert from "@/components/ErrorAlert";
@@ -364,13 +364,6 @@ function ChatSession({
             />
 
             <div className="flex items-center gap-2">
-              {isCoolingDown ? (
-                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-md tabular-nums">
-                  <Clock className="size-3" />
-                  <span>Wait {cooldownSeconds}s</span>
-                </span>
-              ) : null}
-
               <button
                 type="button"
                 onClick={handleNewChat}
@@ -493,6 +486,7 @@ export default function Home() {
 
   useEffect(() => {
     const controller = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadAgents(controller.signal);
     return () => controller.abort();
   }, [loadAgents]);

@@ -14,6 +14,10 @@ app.use(cors({ origin: process.env.CORS_ORIGIN, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
 
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
 // Routes
 app.use("/api/auth", authRouter);
 app.use("/api/agents", agentRouter);
